@@ -1,5 +1,211 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Icon from "@/components/ui/icon";
+
+const AUTH_URL = "https://functions.poehali.dev/5ffb3b59-4c75-4b33-b3eb-741f87fdd137";
+
+interface User {
+  id: number;
+  username: string;
+  email: string;
+  display_name: string;
+  avatar_emoji: string;
+  bio: string | null;
+  location: string | null;
+  photos_count: number;
+  followers_count: number;
+  following_count: number;
+}
+
+// ——— AUTH SCREENS ———
+function AuthScreen({ onAuth }: { onAuth: (user: User, token: string) => void }) {
+  const [mode, setMode] = useState<"login" | "register">("login");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  // Login form
+  const [loginData, setLoginData] = useState({ login: "", password: "" });
+  // Register form
+  const [regData, setRegData] = useState({ username: "", email: "", password: "", display_name: "" });
+
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setLoading(true);
+    try {
+      const res = await fetch(`${AUTH_URL}?action=login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(loginData),
+      });
+      const data = await res.json();
+      if (!res.ok) { setError(data.error || "Ошибка входа"); return; }
+      localStorage.setItem("kadr_token", data.token);
+      onAuth(data.user, data.token);
+    } catch {
+      setError("Ошибка соединения");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRegister = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setLoading(true);
+    try {
+      const res = await fetch(`${AUTH_URL}?action=register`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...regData, display_name: regData.display_name || regData.username }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setError(data.error || "Ошибка регистрации"); return; }
+      localStorage.setItem("kadr_token", data.token);
+      onAuth(data.user, data.token);
+    } catch {
+      setError("Ошибка соединения");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="gradient-mesh min-h-screen flex flex-col items-center justify-center px-6 max-w-md mx-auto">
+      {/* Logo */}
+      <div className="mb-8 text-center animate-fade-in">
+        <h1 className="font-oswald text-5xl font-bold neon-text-pink tracking-widest mb-2">КАДР</h1>
+        <p className="text-muted-foreground text-sm">Фото-платформа нового поколения</p>
+      </div>
+
+      {/* Tabs */}
+      <div className="w-full glass rounded-2xl p-1 flex gap-1 mb-6 animate-fade-in" style={{ animationDelay: "0.1s" }}>
+        {[
+          { key: "login", label: "Войти" },
+          { key: "register", label: "Регистрация" },
+        ].map(tab => (
+          <button
+            key={tab.key}
+            onClick={() => { setMode(tab.key as "login" | "register"); setError(""); }}
+            className="flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all duration-300"
+            style={mode === tab.key ? {
+              background: "linear-gradient(135deg, #FF2D78, #BF00FF)",
+              color: "white",
+              boxShadow: "0 4px 20px rgba(255,45,120,0.3)"
+            } : { color: "var(--muted-foreground)" }}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Error */}
+      {error && (
+        <div className="w-full mb-4 px-4 py-3 rounded-xl text-sm animate-scale-in" style={{ background: "rgba(255,45,120,0.1)", border: "1px solid rgba(255,45,120,0.3)", color: "#FF2D78" }}>
+          {error}
+        </div>
+      )}
+
+      {/* Login Form */}
+      {mode === "login" && (
+        <form onSubmit={handleLogin} className="w-full space-y-3 animate-slide-up">
+          <div className="relative">
+            <Icon name="AtSign" size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <input
+              className="search-input pl-10"
+              placeholder="Email или @username"
+              value={loginData.login}
+              onChange={e => setLoginData(p => ({ ...p, login: e.target.value }))}
+              required
+            />
+          </div>
+          <div className="relative">
+            <Icon name="Lock" size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <input
+              className="search-input pl-10"
+              type="password"
+              placeholder="Пароль"
+              value={loginData.password}
+              onChange={e => setLoginData(p => ({ ...p, password: e.target.value }))}
+              required
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={loading}
+            className="btn-neon w-full py-3 text-base flex items-center justify-center gap-2"
+            style={{ opacity: loading ? 0.7 : 1 }}
+          >
+            {loading ? <><Icon name="Loader2" size={18} className="animate-spin" />Входим...</> : "Войти"}
+          </button>
+        </form>
+      )}
+
+      {/* Register Form */}
+      {mode === "register" && (
+        <form onSubmit={handleRegister} className="w-full space-y-3 animate-slide-up">
+          <div className="relative">
+            <Icon name="User" size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <input
+              className="search-input pl-10"
+              placeholder="@username (минимум 3 символа)"
+              value={regData.username}
+              onChange={e => setRegData(p => ({ ...p, username: e.target.value.replace(/[^a-z0-9_]/gi, "").toLowerCase() }))}
+              required
+            />
+          </div>
+          <div className="relative">
+            <Icon name="Sparkles" size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <input
+              className="search-input pl-10"
+              placeholder="Отображаемое имя"
+              value={regData.display_name}
+              onChange={e => setRegData(p => ({ ...p, display_name: e.target.value }))}
+            />
+          </div>
+          <div className="relative">
+            <Icon name="AtSign" size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <input
+              className="search-input pl-10"
+              type="email"
+              placeholder="Email"
+              value={regData.email}
+              onChange={e => setRegData(p => ({ ...p, email: e.target.value }))}
+              required
+            />
+          </div>
+          <div className="relative">
+            <Icon name="Lock" size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <input
+              className="search-input pl-10"
+              type="password"
+              placeholder="Пароль (минимум 6 символов)"
+              value={regData.password}
+              onChange={e => setRegData(p => ({ ...p, password: e.target.value }))}
+              required
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={loading}
+            className="btn-neon w-full py-3 text-base flex items-center justify-center gap-2"
+            style={{ opacity: loading ? 0.7 : 1 }}
+          >
+            {loading ? <><Icon name="Loader2" size={18} className="animate-spin" />Создаём аккаунт...</> : "Создать аккаунт"}
+          </button>
+          <p className="text-center text-xs text-muted-foreground pt-1">
+            Регистрируясь, вы соглашаетесь с правилами платформы
+          </p>
+        </form>
+      )}
+
+      {/* Decorative blobs */}
+      <div className="fixed inset-0 pointer-events-none -z-10">
+        <div className="absolute top-1/4 -left-20 w-60 h-60 rounded-full blur-3xl" style={{ background: "rgba(255,45,120,0.07)" }} />
+        <div className="absolute bottom-1/4 -right-20 w-60 h-60 rounded-full blur-3xl" style={{ background: "rgba(0,245,255,0.05)" }} />
+      </div>
+    </div>
+  );
+}
 
 const IMG1 = "https://cdn.poehali.dev/projects/f9611c47-1e4f-4cf0-97d2-d00fbcfee9d6/files/48dbe723-6e8e-4b5c-8094-91f9a43e83f5.jpg";
 const IMG2 = "https://cdn.poehali.dev/projects/f9611c47-1e4f-4cf0-97d2-d00fbcfee9d6/files/5678c543-1819-43db-9ddb-5c766f362bc2.jpg";
@@ -230,7 +436,7 @@ function FavoritesSection({ photos }: { photos: Photo[] }) {
   );
 }
 
-function ProfileSection({ photos }: { photos: Photo[] }) {
+function ProfileSection({ photos, user }: { photos: Photo[]; user: User | null }) {
   const [activeTab, setActiveTab] = useState<"grid" | "liked">("grid");
 
   return (
@@ -242,21 +448,21 @@ function ProfileSection({ photos }: { photos: Photo[] }) {
       <div className="px-4 -mt-10 relative">
         <div className="flex items-end justify-between mb-4">
           <div className="avatar-ring">
-            <div className="w-20 h-20 rounded-full bg-black flex items-center justify-center text-4xl border-4 border-black">🧑‍🎨</div>
+            <div className="w-20 h-20 rounded-full bg-black flex items-center justify-center text-4xl border-4 border-black">{user?.avatar_emoji || "🧑‍🎨"}</div>
           </div>
           <button className="btn-neon">Редактировать</button>
         </div>
-        <h2 className="text-xl font-bold font-oswald mb-0.5">@my_username</h2>
-        <p className="text-sm text-muted-foreground mb-3">Фотограф · Москва ✈️</p>
-        <p className="text-sm text-foreground/80 mb-4">Снимаю жизнь такой, какая она есть. Люблю закаты, неон и абстракцию.</p>
+        <h2 className="text-xl font-bold font-oswald mb-0.5">@{user?.username || "username"}</h2>
+        <p className="text-sm text-muted-foreground mb-3">{user?.display_name || "Фотограф"}{user?.location ? ` · ${user.location}` : ""}</p>
+        <p className="text-sm text-foreground/80 mb-4">{user?.bio || "Снимаю жизнь такой, какая она есть."}</p>
         <div className="flex flex-wrap gap-2 mb-5">
           {["#пейзаж", "#стрит", "#арт"].map(t => <span key={t} className="tag">{t}</span>)}
         </div>
         <div className="grid grid-cols-3 gap-3 mb-5">
           {[
-            { label: "Фото", val: "48" },
-            { label: "Подписчиков", val: "12.4K" },
-            { label: "Подписок", val: "384" },
+            { label: "Фото", val: String(user?.photos_count ?? 0) },
+            { label: "Подписчиков", val: String(user?.followers_count ?? 0) },
+            { label: "Подписок", val: String(user?.following_count ?? 0) },
           ].map(s => (
             <div key={s.label} className="stat-card">
               <div className="text-xl font-bold font-oswald neon-text-pink">{s.val}</div>
@@ -352,7 +558,7 @@ function NotificationsSection() {
   );
 }
 
-function SettingsSection() {
+function SettingsSection({ user, onLogout }: { user: User | null; onLogout: () => void }) {
   const [privacy, setPrivacy] = useState({ privateAccount: false, showActivity: true, allowComments: true, notifications: true, emailDigest: false });
 
   const toggle = (key: keyof typeof privacy) => setPrivacy(prev => ({ ...prev, [key]: !prev[key] }));
@@ -361,11 +567,11 @@ function SettingsSection() {
     <div className="flex-1 overflow-y-auto px-4 py-4">
       <div className="glass rounded-2xl p-4 flex items-center gap-4 mb-5">
         <div className="avatar-ring">
-          <div className="w-14 h-14 rounded-full bg-black flex items-center justify-center text-3xl border-2 border-black">🧑‍🎨</div>
+          <div className="w-14 h-14 rounded-full bg-black flex items-center justify-center text-3xl border-2 border-black">{user?.avatar_emoji || "🧑‍🎨"}</div>
         </div>
         <div>
-          <p className="font-semibold">@my_username</p>
-          <p className="text-sm text-muted-foreground">my@email.com</p>
+          <p className="font-semibold">@{user?.username || "username"}</p>
+          <p className="text-sm text-muted-foreground">{user?.email || ""}</p>
         </div>
         <button className="ml-auto btn-neon text-xs py-2">Изменить</button>
       </div>
@@ -425,7 +631,7 @@ function SettingsSection() {
             <Icon name="ChevronRight" size={16} className="text-muted-foreground" />
           </div>
         ))}
-        <button className="w-full flex items-center justify-center gap-2 py-4 mt-4 rounded-2xl transition-all" style={{ color: "#FF2D78", background: "rgba(255,45,120,0.05)", border: "1px solid rgba(255,45,120,0.15)" }}>
+        <button onClick={onLogout} className="w-full flex items-center justify-center gap-2 py-4 mt-4 rounded-2xl transition-all" style={{ color: "#FF2D78", background: "rgba(255,45,120,0.05)", border: "1px solid rgba(255,45,120,0.15)" }}>
           <Icon name="LogOut" size={16} />
           <span className="text-sm font-medium">Выйти из аккаунта</span>
         </button>
@@ -437,6 +643,52 @@ function SettingsSection() {
 export default function Index() {
   const [section, setSection] = useState<Section>("feed");
   const [photos, setPhotos] = useState<Photo[]>(initialPhotos);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [authToken, setAuthToken] = useState<string>("");
+  const [authLoading, setAuthLoading] = useState(true);
+
+  // Восстанавливаем сессию при загрузке
+  useEffect(() => {
+    const token = localStorage.getItem("kadr_token");
+    if (!token) { setAuthLoading(false); return; }
+    fetch(`${AUTH_URL}?action=me`, {
+      headers: { "Authorization": `Bearer ${token}` }
+    })
+      .then(r => r.json())
+      .then(data => {
+        if (data.user) { setCurrentUser(data.user); setAuthToken(token); }
+        else { localStorage.removeItem("kadr_token"); }
+      })
+      .catch(() => localStorage.removeItem("kadr_token"))
+      .finally(() => setAuthLoading(false));
+  }, []);
+
+  const handleAuth = (user: User, token: string) => {
+    setCurrentUser(user);
+    setAuthToken(token);
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem("kadr_token");
+    setCurrentUser(null);
+    setAuthToken("");
+    setSection("feed");
+  };
+
+  if (authLoading) {
+    return (
+      <div className="gradient-mesh min-h-screen flex items-center justify-center max-w-md mx-auto">
+        <div className="text-center animate-fade-in">
+          <h1 className="font-oswald text-4xl font-bold neon-text-pink tracking-widest mb-4">КАДР</h1>
+          <Icon name="Loader2" size={28} className="animate-spin text-primary mx-auto" />
+        </div>
+      </div>
+    );
+  }
+
+  if (!currentUser) {
+    return <AuthScreen onAuth={handleAuth} />;
+  }
 
   const unreadNotifs = NOTIFICATIONS.filter(n => n.unread).length;
 
@@ -488,9 +740,9 @@ export default function Index() {
         {section === "feed" && <FeedSection photos={photos} onToggleLike={toggleLike} onToggleSave={toggleSave} onReact={setReaction} />}
         {section === "explore" && <ExploreSection />}
         {section === "favorites" && <FavoritesSection photos={photos} />}
-        {section === "profile" && <ProfileSection photos={photos} />}
+        {section === "profile" && <ProfileSection photos={photos} user={currentUser} />}
         {section === "notifications" && <NotificationsSection />}
-        {section === "settings" && <SettingsSection />}
+        {section === "settings" && <SettingsSection user={currentUser} onLogout={handleLogout} />}
       </main>
 
       {section !== "settings" && (
