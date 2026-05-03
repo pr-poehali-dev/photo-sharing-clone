@@ -1,0 +1,35 @@
+{
+  "tests": [
+    {
+      "name": "OPTIONS preflight",
+      "method": "OPTIONS",
+      "path": "/",
+      "expectedStatus": 200
+    },
+    {
+      "name": "Get feed (unauthenticated)",
+      "method": "GET",
+      "path": "/?action=feed",
+      "expectedStatus": 200,
+      "expectedBody": { "posts": [] },
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Get users list",
+      "method": "GET",
+      "path": "/?action=users",
+      "expectedStatus": 200,
+      "expectedBody": { "users": [] },
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Like without auth",
+      "method": "POST",
+      "path": "/?action=like",
+      "body": { "post_id": 1 },
+      "expectedStatus": 401,
+      "expectedBody": { "error": "string" },
+      "bodyMatcher": "partial"
+    }
+  ]
+}
