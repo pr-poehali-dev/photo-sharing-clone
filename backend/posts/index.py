@@ -58,13 +58,17 @@ def handler(event: dict, context) -> dict:
         # GET feed — лента постов
         if method == "GET" and action == "feed":
             offset = int(params.get("offset", 0))
+            media_filter = params.get("media_type", "")
+            filter_clause = f"AND p.media_type = '{media_filter}'" if media_filter in ("photo", "video") else ""
             cur.execute(f"""
                 SELECT p.id, p.user_id, p.image_url, p.caption, p.tags, p.likes_count, p.comments_count, p.created_at,
                        u.username, u.display_name, u.avatar_emoji,
-                       CASE WHEN l.id IS NOT NULL THEN true ELSE false END as liked
+                       CASE WHEN l.id IS NOT NULL THEN true ELSE false END as liked,
+                       COALESCE(p.media_type, 'photo'), p.video_url, p.thumbnail_url, p.duration_sec
                 FROM {SCHEMA}.posts p
                 JOIN {SCHEMA}.users u ON u.id = p.user_id
                 LEFT JOIN {SCHEMA}.likes l ON l.post_id = p.id AND l.user_id = %s
+                {filter_clause}
                 ORDER BY p.created_at DESC
                 LIMIT 20 OFFSET %s
             """, (user_id, offset))
@@ -72,19 +76,23 @@ def handler(event: dict, context) -> dict:
             posts = [{"id": r[0], "user_id": r[1], "image_url": r[2], "caption": r[3],
                       "tags": r[4] or [], "likes_count": r[5], "comments_count": r[6],
                       "created_at": str(r[7]), "username": r[8], "display_name": r[9],
-                      "avatar_emoji": r[10], "liked": r[11]} for r in rows]
+                      "avatar_emoji": r[10], "liked": r[11],
+                      "media_type": r[12], "video_url": r[13],
+                      "thumbnail_url": r[14], "duration_sec": r[15]} for r in rows]
             return resp(200, {"posts": posts})
 
         # GET user_posts
         if method == "GET" and action == "user_posts":
             uid = int(params.get("user_id", 0))
             cur.execute(f"""
-                SELECT p.id, p.image_url, p.caption, p.likes_count, p.comments_count, p.created_at
+                SELECT p.id, p.image_url, p.caption, p.likes_count, p.comments_count, p.created_at,
+                       COALESCE(p.media_type,'photo'), p.video_url, p.thumbnail_url
                 FROM {SCHEMA}.posts p WHERE p.user_id = %s ORDER BY p.created_at DESC
             """, (uid,))
             rows = cur.fetchall()
             posts = [{"id": r[0], "image_url": r[1], "caption": r[2],
-                      "likes_count": r[3], "comments_count": r[4], "created_at": str(r[5])} for r in rows]
+                      "likes_count": r[3], "comments_count": r[4], "created_at": str(r[5]),
+                      "media_type": r[6], "video_url": r[7], "thumbnail_url": r[8]} for r in rows]
             return resp(200, {"posts": posts})
 
         # GET comments

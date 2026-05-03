@@ -1,0 +1,27 @@
+{
+  "tests": [
+    {
+      "name": "OPTIONS preflight",
+      "method": "OPTIONS",
+      "path": "/",
+      "expectedStatus": 200
+    },
+    {
+      "name": "Upload without auth",
+      "method": "POST",
+      "path": "/?action=upload_photo",
+      "body": { "file_data": "abc", "mime_type": "image/jpeg" },
+      "expectedStatus": 401,
+      "expectedBody": { "error": "string" },
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "GET returns 405",
+      "method": "GET",
+      "path": "/?action=upload_photo",
+      "expectedStatus": 401,
+      "expectedBody": { "error": "string" },
+      "bodyMatcher": "partial"
+    }
+  ]
+}

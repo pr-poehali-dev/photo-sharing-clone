@@ -5,6 +5,7 @@ import Icon from "@/components/ui/icon";
 const AUTH_URL = "https://functions.poehali.dev/5ffb3b59-4c75-4b33-b3eb-741f87fdd137";
 const POSTS_URL = "https://functions.poehali.dev/ea16cc75-61a1-41be-a6be-58ef33c31734";
 const MESSAGES_URL = "https://functions.poehali.dev/54b415ee-9273-440c-a386-02766a9b2b53";
+const UPLOAD_URL = "https://functions.poehali.dev/d9f6732f-c431-4878-bfb2-7c87a7af9184";
 
 const IMG1 = "https://cdn.poehali.dev/projects/f9611c47-1e4f-4cf0-97d2-d00fbcfee9d6/files/48dbe723-6e8e-4b5c-8094-91f9a43e83f5.jpg";
 const IMG2 = "https://cdn.poehali.dev/projects/f9611c47-1e4f-4cf0-97d2-d00fbcfee9d6/files/5678c543-1819-43db-9ddb-5c766f362bc2.jpg";
@@ -49,6 +50,10 @@ interface Post {
   display_name: string;
   avatar_emoji: string;
   liked: boolean;
+  media_type?: "photo" | "video";
+  video_url?: string | null;
+  thumbnail_url?: string | null;
+  duration_sec?: number | null;
 }
 
 interface Comment {
@@ -97,7 +102,7 @@ interface ChatPartner {
   avatar_emoji: string;
 }
 
-type Section = "feed" | "explore" | "people" | "messages" | "chat" | "profile" | "notifications" | "settings" | "post_detail";
+type Section = "feed" | "explore" | "people" | "messages" | "chat" | "profile" | "notifications" | "settings" | "post_detail" | "upload";
 
 // ——— HELPER ———
 async function apiCall<T>(
@@ -443,13 +448,15 @@ function FeedSection({
         </div>
       ) : (
         <div className="columns-2 gap-3">
-          {posts.map((post, idx) => (
+          {posts.map((post, idx) => post.media_type === "video" ? (
+            <VideoCard key={post.id} post={post} onOpen={() => onOpenPost(post)} />
+          ) : (
             <div
               key={post.id}
               className={`photo-card w-full mb-3 animate-fade-in ${cardHeight(idx)}`}
               onClick={() => onOpenPost(post)}
             >
-              <img src={post.image_url} alt={post.caption} className="w-full h-full object-cover" />
+              <img src={post.thumbnail_url || post.image_url} alt={post.caption} className="w-full h-full object-cover" />
               <div className="photo-overlay" onClick={e => e.stopPropagation()}>
                 {/* Top: author */}
                 <div className="flex items-center justify-between">
@@ -1414,6 +1421,283 @@ function SettingsSection({
   );
 }
 
+// ——— VIDEO CARD ———
+function VideoCard({ post, onOpen }: { post: Post; onOpen: () => void }) {
+  const [playing, setPlaying] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  const toggle = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!videoRef.current) return;
+    if (playing) { videoRef.current.pause(); setPlaying(false); }
+    else { videoRef.current.play(); setPlaying(true); }
+  };
+
+  const fmtDur = (s: number | null | undefined) => {
+    if (!s) return "";
+    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+  };
+
+  return (
+    <div className="photo-card mb-3 w-full h-64 cursor-pointer" onClick={onOpen}>
+      {post.video_url ? (
+        <video
+          ref={videoRef}
+          src={post.video_url}
+          poster={post.thumbnail_url || post.image_url || undefined}
+          className="w-full h-full object-cover"
+          loop
+          playsInline
+          preload="metadata"
+          onEnded={() => setPlaying(false)}
+        />
+      ) : (
+        <img src={post.thumbnail_url || post.image_url} alt="" className="w-full h-full object-cover" />
+      )}
+      {/* Play/Pause button */}
+      <div className="absolute inset-0 flex items-center justify-center" onClick={toggle}>
+        {!playing && (
+          <div className="w-14 h-14 rounded-full flex items-center justify-center transition-all"
+            style={{ background: "rgba(0,0,0,0.55)", backdropFilter: "blur(4px)", border: "2px solid rgba(255,255,255,0.3)" }}>
+            <Icon name="Play" size={24} className="text-white ml-1" />
+          </div>
+        )}
+      </div>
+      {/* Overlay info */}
+      <div className="photo-overlay" style={{ opacity: 1 }}>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="avatar-ring">
+              <div className="w-7 h-7 rounded-full bg-black flex items-center justify-center text-sm">{post.avatar_emoji}</div>
+            </div>
+            <span className="text-white text-xs font-semibold drop-shadow">{post.username}</span>
+          </div>
+          <div className="flex items-center gap-1 px-2 py-1 rounded-lg" style={{ background: "rgba(0,0,0,0.5)" }}>
+            <Icon name="Video" size={10} className="text-white" />
+            {post.duration_sec && <span className="text-white text-[10px]">{fmtDur(post.duration_sec)}</span>}
+          </div>
+        </div>
+        <div>
+          {post.caption && <p className="text-white text-xs font-medium mb-1 drop-shadow line-clamp-2">{post.caption}</p>}
+          <div className="flex items-center gap-3">
+            <span className="flex items-center gap-1 text-white text-xs"><Icon name="Heart" size={11} />{post.likes_count}</span>
+            <span className="flex items-center gap-1 text-white text-xs"><Icon name="MessageCircle" size={11} />{post.comments_count}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ——— UPLOAD SECTION ———
+function UploadSection({
+  token,
+  currentUser,
+  onBack,
+}: {
+  token: string;
+  currentUser: User;
+  onBack: () => void;
+}) {
+  const [tab, setTab] = useState<"photo" | "video">("photo");
+  const [file, setFile] = useState<File | null>(null);
+  const [preview, setPreview] = useState<string>("");
+  const [caption, setCaption] = useState("");
+  const [tags, setTags] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [error, setError] = useState("");
+  const [done, setDone] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFile = (f: File) => {
+    setFile(f);
+    setError("");
+    const url = URL.createObjectURL(f);
+    setPreview(url);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    const f = e.dataTransfer.files[0];
+    if (f) handleFile(f);
+  };
+
+  const toBase64 = (f: File): Promise<string> =>
+    new Promise((res, rej) => {
+      const r = new FileReader();
+      r.onload = () => res((r.result as string).split(",")[1]);
+      r.onerror = rej;
+      r.readAsDataURL(f);
+    });
+
+  const handleUpload = async () => {
+    if (!file) return;
+    setLoading(true);
+    setError("");
+    setProgress(10);
+
+    try {
+      const fileData = await toBase64(file);
+      setProgress(40);
+
+      const action = tab === "video" ? "upload_video" : "upload_photo";
+      const body: Record<string, string> = {
+        file_data: fileData,
+        mime_type: file.type,
+        caption,
+        tags,
+      };
+
+      setProgress(60);
+      const res = await fetch(`${UPLOAD_URL}?action=${action}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+        body: JSON.stringify(body),
+      });
+      setProgress(90);
+      const data = await res.json();
+      if (!res.ok) { setError(data.error || "Ошибка загрузки"); return; }
+
+      setProgress(100);
+      setDone(true);
+    } catch {
+      setError("Ошибка соединения");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (done) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center px-6 gap-6 animate-fade-in">
+        <div className="w-20 h-20 rounded-full flex items-center justify-center animate-scale-in"
+          style={{ background: "linear-gradient(135deg,#FF2D78,#BF00FF)", boxShadow: "0 0 40px rgba(255,45,120,0.5)" }}>
+          <Icon name="Check" size={36} className="text-white" />
+        </div>
+        <div className="text-center">
+          <p className="font-oswald text-2xl font-bold neon-text-pink mb-1">Опубликовано!</p>
+          <p className="text-muted-foreground text-sm">Ваш {tab === "video" ? "ролик" : "снимок"} теперь виден всем</p>
+        </div>
+        <button onClick={onBack} className="btn-neon px-8 py-3">Перейти в ленту</button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex-1 overflow-y-auto px-4 py-4">
+      {/* Tabs */}
+      <div className="glass rounded-2xl p-1 flex gap-1 mb-5">
+        {(["photo", "video"] as const).map(t => (
+          <button key={t} onClick={() => { setTab(t); setFile(null); setPreview(""); }}
+            className="flex-1 py-2 rounded-xl text-sm font-semibold transition-all duration-300 flex items-center justify-center gap-2"
+            style={tab === t ? { background: "linear-gradient(135deg,#FF2D78,#BF00FF)", color: "white" } : { color: "rgba(255,255,255,0.5)" }}>
+            <Icon name={t === "photo" ? "Image" : "Video"} size={14} />
+            {t === "photo" ? "Фото" : "Видео"}
+          </button>
+        ))}
+      </div>
+
+      {/* Drop zone */}
+      {!preview ? (
+        <div
+          className="rounded-2xl border-2 border-dashed flex flex-col items-center justify-center gap-3 mb-4 cursor-pointer transition-all duration-200"
+          style={{ height: 220, borderColor: "rgba(255,45,120,0.3)", background: "rgba(255,45,120,0.03)" }}
+          onClick={() => fileInputRef.current?.click()}
+          onDrop={handleDrop}
+          onDragOver={e => e.preventDefault()}
+        >
+          <div className="w-14 h-14 rounded-full flex items-center justify-center"
+            style={{ background: "rgba(255,45,120,0.12)" }}>
+            <Icon name={tab === "photo" ? "ImagePlus" : "VideoIcon"} size={28} className="text-primary" />
+          </div>
+          <p className="text-sm font-medium text-foreground">Нажми или перетащи файл</p>
+          <p className="text-xs text-muted-foreground">
+            {tab === "photo" ? "JPG, PNG, WebP — до 20 МБ" : "MP4, MOV, WebM — до 100 МБ"}
+          </p>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept={tab === "photo" ? "image/*" : "video/*"}
+            className="hidden"
+            onChange={e => e.target.files?.[0] && handleFile(e.target.files[0])}
+          />
+        </div>
+      ) : (
+        <div className="relative rounded-2xl overflow-hidden mb-4 bg-black" style={{ height: 220 }}>
+          {tab === "photo" ? (
+            <img src={preview} alt="" className="w-full h-full object-contain" />
+          ) : (
+            <video src={preview} className="w-full h-full object-contain" controls />
+          )}
+          <button onClick={() => { setFile(null); setPreview(""); }}
+            className="absolute top-2 right-2 w-8 h-8 rounded-full flex items-center justify-center glass-strong">
+            <Icon name="X" size={14} />
+          </button>
+        </div>
+      )}
+
+      {/* Caption */}
+      <div className="mb-3">
+        <div className="flex items-center gap-3 mb-3 p-3 glass rounded-2xl">
+          <div className="w-9 h-9 rounded-full bg-black flex items-center justify-center text-lg flex-shrink-0">{currentUser.avatar_emoji}</div>
+          <textarea
+            className="flex-1 bg-transparent outline-none text-sm resize-none text-foreground placeholder:text-muted-foreground"
+            placeholder="Добавь описание..."
+            rows={2}
+            value={caption}
+            onChange={e => setCaption(e.target.value)}
+          />
+        </div>
+        <div className="relative">
+          <Icon name="Hash" size={15} className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground" />
+          <input
+            className="search-input pl-10"
+            placeholder="#хештеги через пробел"
+            value={tags}
+            onChange={e => setTags(e.target.value)}
+          />
+        </div>
+      </div>
+
+      {/* Error */}
+      {error && (
+        <div className="mb-3 px-4 py-2 rounded-xl text-sm animate-scale-in"
+          style={{ background: "rgba(255,45,120,0.1)", border: "1px solid rgba(255,45,120,0.3)", color: "#FF2D78" }}>
+          {error}
+        </div>
+      )}
+
+      {/* Progress */}
+      {loading && (
+        <div className="mb-3">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-xs text-muted-foreground">Загрузка...</span>
+            <span className="text-xs neon-text-pink">{progress}%</span>
+          </div>
+          <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.08)" }}>
+            <div className="h-full rounded-full transition-all duration-300"
+              style={{ width: `${progress}%`, background: "linear-gradient(90deg,#FF2D78,#BF00FF)" }} />
+          </div>
+        </div>
+      )}
+
+      {/* Submit */}
+      <button
+        disabled={!file || loading}
+        onClick={handleUpload}
+        className="btn-neon w-full py-3.5 text-base flex items-center justify-center gap-2"
+        style={{ opacity: (!file || loading) ? 0.5 : 1 }}
+      >
+        {loading
+          ? <><Icon name="Loader2" size={18} className="animate-spin" />Публикуем...</>
+          : <><Icon name={tab === "photo" ? "ImagePlus" : "VideoIcon"} size={18} />Опубликовать</>
+        }
+      </button>
+    </div>
+  );
+}
+
 // ——— MAIN INDEX ———
 export default function Index() {
   const [section, setSection] = useState<Section>("feed");
@@ -1486,6 +1770,8 @@ export default function Index() {
     } else if (section === "post_detail") {
       setSelectedPost(null);
       setSection("feed");
+    } else if (section === "upload") {
+      setSection("feed");
     } else {
       setSection("feed");
     }
@@ -1500,7 +1786,8 @@ export default function Index() {
     profile: "Профиль",
     notifications: "Уведомления",
     settings: "Настройки",
-    post_detail: "Фото",
+    post_detail: "Публикация",
+    upload: "Новая публикация",
   };
 
   const NAV_ITEMS = [
@@ -1525,7 +1812,7 @@ export default function Index() {
     return <AuthScreen onAuth={handleAuth} />;
   }
 
-  const isBack = section === "chat" || section === "post_detail" || section === "settings" || section === "notifications";
+  const isBack = section === "chat" || section === "post_detail" || section === "settings" || section === "notifications" || section === "upload";
 
   return (
     <div className="gradient-mesh min-h-screen flex flex-col max-w-md mx-auto relative">
@@ -1556,10 +1843,12 @@ export default function Index() {
           {section === "feed" && (
             <>
               <button
-                className="p-2 rounded-xl hover:bg-white/5 transition-colors relative"
-                onClick={() => setSection("notifications")}
+                className="p-2 rounded-xl transition-colors flex items-center gap-1.5 text-sm font-semibold"
+                style={{ background: "linear-gradient(135deg,#FF2D78,#BF00FF)", color: "white", paddingLeft: "12px", paddingRight: "12px", borderRadius: "12px" }}
+                onClick={() => setSection("upload")}
               >
-                <Icon name="Bell" size={20} />
+                <Icon name="Plus" size={16} />
+                <span className="text-xs">Создать</span>
               </button>
               <button
                 className="p-2 rounded-xl hover:bg-white/5 transition-colors"
@@ -1626,6 +1915,13 @@ export default function Index() {
             currentUser={currentUser}
             onBack={goBack}
             onOpenChat={openChat}
+          />
+        )}
+        {section === "upload" && (
+          <UploadSection
+            token={authToken}
+            currentUser={currentUser}
+            onBack={() => setSection("feed")}
           />
         )}
       </main>
